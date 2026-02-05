@@ -2,21 +2,22 @@
 name: agentic-browser
 description: |
   Browser automation for AI agents via inference.sh.
-  Navigate web pages, interact with elements using @e refs, take screenshots.
-  Capabilities: web scraping, form filling, clicking, typing, JavaScript execution.
+  Navigate web pages, interact with elements using @e refs, take screenshots, record video.
+  Capabilities: web scraping, form filling, clicking, typing, drag-drop, file upload, JavaScript execution.
   Use for: web automation, data extraction, testing, agent browsing, research.
   Triggers: browser, web automation, scrape, navigate, click, fill form, screenshot,
-  browse web, playwright, headless browser, web agent, surf internet
+  browse web, playwright, headless browser, web agent, surf internet, record video
 allowed-tools: Bash(infsh *)
 ---
 
 # Agentic Browser
 
-Browser automation for AI agents via [inference.sh](https://inference.sh).
+Browser automation for AI agents via [inference.sh](https://inference.sh). Uses Playwright under the hood with a simple `@e` ref system for element interaction.
 
 ## Quick Start
 
 ```bash
+# Install CLI
 curl -fsSL https://cli.inference.sh | sh && infsh login
 
 # Open a page and get interactive elements
@@ -27,154 +28,171 @@ infsh app run agentic-browser --function open --input '{"url": "https://example.
 
 Every browser automation follows this pattern:
 
-1. **Open**: Navigate to URL, get element refs
-2. **Snapshot**: Re-fetch elements after DOM changes
-3. **Interact**: Use `@e` refs to click, fill, etc.
-4. **Re-snapshot**: After navigation, get fresh refs
+1. **Open** - Navigate to URL, get `@e` refs for elements
+2. **Interact** - Use refs to click, fill, drag, etc.
+3. **Re-snapshot** - After navigation/changes, get fresh refs
+4. **Close** - End session (returns video if recording)
 
 ```bash
-# Start session
+# 1. Start session
 RESULT=$(infsh app run agentic-browser --function open --session new --input '{
   "url": "https://example.com/login"
 }')
 SESSION_ID=$(echo $RESULT | jq -r '.session_id')
+# Elements: @e1 [input] "Email", @e2 [input] "Password", @e3 [button] "Sign In"
 
-# Elements returned like: @e1 [input] "Email", @e2 [input] "Password", @e3 [button] "Sign In"
-
-# Fill form
+# 2. Fill and submit
 infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
   "action": "fill", "ref": "@e1", "text": "user@example.com"
 }'
-
 infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
   "action": "fill", "ref": "@e2", "text": "password123"
 }'
-
-# Click submit
 infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
   "action": "click", "ref": "@e3"
 }'
 
-# Close when done
+# 3. Re-snapshot after navigation
+infsh app run agentic-browser --function snapshot --session $SESSION_ID --input '{}'
+
+# 4. Close when done
 infsh app run agentic-browser --function close --session $SESSION_ID --input '{}'
 ```
 
 ## Functions
 
-### open
+| Function | Description |
+|----------|-------------|
+| `open` | Navigate to URL, configure browser (viewport, proxy, video recording) |
+| `snapshot` | Re-fetch page state with `@e` refs after DOM changes |
+| `interact` | Perform actions using `@e` refs (click, fill, drag, upload, etc.) |
+| `screenshot` | Take page screenshot (viewport or full page) |
+| `execute` | Run JavaScript code on the page |
+| `close` | Close session, returns video if recording was enabled |
 
-Navigate to URL and configure browser. Returns page snapshot with `@e` refs.
-
-```bash
-infsh app run agentic-browser --function open --session new --input '{
-  "url": "https://example.com",
-  "width": 1280,
-  "height": 720,
-  "user_agent": "Mozilla/5.0..."
-}'
-```
-
-**Returns:**
-- `url`: Current page URL
-- `title`: Page title
-- `elements`: List of interactive elements with `@e` refs
-- `screenshot`: Page screenshot (for vision agents)
-
-### snapshot
-
-Re-fetch page state after DOM changes. Always call after clicks that navigate.
-
-```bash
-infsh app run agentic-browser --function snapshot --session $SESSION_ID --input '{}'
-```
-
-### interact
-
-Interact with elements using `@e` refs from snapshot.
+## Interact Actions
 
 | Action | Description | Required Fields |
 |--------|-------------|-----------------|
 | `click` | Click element | `ref` |
+| `dblclick` | Double-click element | `ref` |
 | `fill` | Clear and type text | `ref`, `text` |
 | `type` | Type text (no clear) | `text` |
-| `press` | Press key | `text` (e.g., "Enter") |
-| `select` | Select dropdown | `ref`, `text` |
+| `press` | Press key (Enter, Tab, etc.) | `text` |
+| `select` | Select dropdown option | `ref`, `text` |
 | `hover` | Hover over element | `ref` |
-| `scroll` | Scroll page | `direction` (up/down) |
+| `check` | Check checkbox | `ref` |
+| `uncheck` | Uncheck checkbox | `ref` |
+| `drag` | Drag and drop | `ref`, `target_ref` |
+| `upload` | Upload file(s) | `ref`, `file_paths` |
+| `scroll` | Scroll page | `direction` (up/down/left/right), `scroll_amount` |
 | `back` | Go back in history | - |
 | `wait` | Wait milliseconds | `wait_ms` |
 | `goto` | Navigate to URL | `url` |
 
-```bash
-# Click
-infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
-  "action": "click", "ref": "@e5"
-}'
-
-# Fill input
-infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
-  "action": "fill", "ref": "@e1", "text": "hello@example.com"
-}'
-
-# Press Enter
-infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
-  "action": "press", "text": "Enter"
-}'
-
-# Scroll down
-infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
-  "action": "scroll", "direction": "down"
-}'
-
-# Navigate to different URL (same session)
-infsh app run agentic-browser --function interact --session $SESSION_ID --input '{
-  "action": "goto", "url": "https://example.com/other-page"
-}'
-```
-
-### screenshot
-
-Take page screenshot.
-
-```bash
-infsh app run agentic-browser --function screenshot --session $SESSION_ID --input '{
-  "full_page": true
-}'
-```
-
-### execute
-
-Run JavaScript on the page.
-
-```bash
-infsh app run agentic-browser --function execute --session $SESSION_ID --input '{
-  "code": "document.title"
-}'
-```
-
-### close
-
-Close browser session.
-
-```bash
-infsh app run agentic-browser --function close --session $SESSION_ID --input '{}'
-```
-
 ## Element Refs
 
-Elements are returned with `@e` refs like:
+Elements are returned with `@e` refs:
 
 ```
 @e1 [a] "Home" href="/"
 @e2 [input type="text"] placeholder="Search"
 @e3 [button] "Submit"
 @e4 [select] "Choose option"
+@e5 [input type="checkbox"] name="agree"
 ```
 
 **Important:** Refs are invalidated after navigation. Always re-snapshot after:
 - Clicking links/buttons that navigate
 - Form submissions
 - Dynamic content loading
+
+## Features
+
+### Video Recording
+
+Record browser sessions for debugging or documentation:
+
+```bash
+# Start with recording enabled
+SESSION=$(infsh app run agentic-browser --function open --session new --input '{
+  "url": "https://example.com",
+  "record_video": true
+}' | jq -r '.session_id')
+
+# ... perform actions ...
+
+# Close to get the video file
+infsh app run agentic-browser --function close --session $SESSION --input '{}'
+# Returns: {"success": true, "video": <File>}
+```
+
+### Proxy Support
+
+Route traffic through a proxy server:
+
+```bash
+infsh app run agentic-browser --function open --session new --input '{
+  "url": "https://example.com",
+  "proxy_url": "http://proxy.example.com:8080",
+  "proxy_username": "user",
+  "proxy_password": "pass"
+}'
+```
+
+### File Upload
+
+Upload files to file inputs:
+
+```bash
+infsh app run agentic-browser --function interact --session $SESSION --input '{
+  "action": "upload",
+  "ref": "@e5",
+  "file_paths": ["/path/to/file.pdf"]
+}'
+```
+
+### Drag and Drop
+
+Drag elements to targets:
+
+```bash
+infsh app run agentic-browser --function interact --session $SESSION --input '{
+  "action": "drag",
+  "ref": "@e1",
+  "target_ref": "@e2"
+}'
+```
+
+### JavaScript Execution
+
+Run custom JavaScript:
+
+```bash
+infsh app run agentic-browser --function execute --session $SESSION --input '{
+  "code": "document.querySelectorAll(\"h2\").length"
+}'
+# Returns: {"result": "5", "screenshot": <File>}
+```
+
+## Deep-Dive Documentation
+
+| Reference | Description |
+|-----------|-------------|
+| [references/commands.md](references/commands.md) | Full function reference with all options |
+| [references/snapshot-refs.md](references/snapshot-refs.md) | Ref lifecycle, invalidation rules, troubleshooting |
+| [references/session-management.md](references/session-management.md) | Session persistence, parallel sessions |
+| [references/authentication.md](references/authentication.md) | Login flows, OAuth, 2FA handling |
+| [references/video-recording.md](references/video-recording.md) | Recording workflows for debugging |
+| [references/proxy-support.md](references/proxy-support.md) | Proxy configuration, geo-testing |
+
+## Ready-to-Use Templates
+
+| Template | Description |
+|----------|-------------|
+| [templates/form-automation.sh](templates/form-automation.sh) | Form filling with validation |
+| [templates/authenticated-session.sh](templates/authenticated-session.sh) | Login once, reuse session |
+| [templates/capture-workflow.sh](templates/capture-workflow.sh) | Content extraction with screenshots |
 
 ## Examples
 
@@ -185,16 +203,14 @@ SESSION=$(infsh app run agentic-browser --function open --session new --input '{
   "url": "https://example.com/contact"
 }' | jq -r '.session_id')
 
-# Get elements: @e1 [input] "Name", @e2 [input] "Email", @e3 [textarea] "Message", @e4 [button] "Send"
+# Get elements: @e1 [input] "Name", @e2 [input] "Email", @e3 [textarea], @e4 [button] "Send"
 
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "fill", "ref": "@e1", "text": "John Doe"}'
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "fill", "ref": "@e2", "text": "john@example.com"}'
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "fill", "ref": "@e3", "text": "Hello!"}'
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "click", "ref": "@e4"}'
 
-# Check result
 infsh app run agentic-browser --function snapshot --session $SESSION --input '{}'
-
 infsh app run agentic-browser --function close --session $SESSION --input '{}'
 ```
 
@@ -205,52 +221,39 @@ SESSION=$(infsh app run agentic-browser --function open --session new --input '{
   "url": "https://google.com"
 }' | jq -r '.session_id')
 
-# Fill search box and submit
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "fill", "ref": "@e1", "text": "weather today"}'
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "press", "text": "Enter"}'
 infsh app run agentic-browser --function interact --session $SESSION --input '{"action": "wait", "wait_ms": 2000}'
 
-# Get results page
 infsh app run agentic-browser --function snapshot --session $SESSION --input '{}'
-
 infsh app run agentic-browser --function close --session $SESSION --input '{}'
 ```
 
-### Extract Data with JavaScript
+### Screenshot with Video
 
 ```bash
-infsh app run agentic-browser --function execute --session $SESSION --input '{
-  "code": "Array.from(document.querySelectorAll(\"h2\")).map(h => h.textContent)"
+SESSION=$(infsh app run agentic-browser --function open --session new --input '{
+  "url": "https://example.com",
+  "record_video": true
+}' | jq -r '.session_id')
+
+# Take full page screenshot
+infsh app run agentic-browser --function screenshot --session $SESSION --input '{
+  "full_page": true
 }'
+
+# Close and get video
+RESULT=$(infsh app run agentic-browser --function close --session $SESSION --input '{}')
+echo $RESULT | jq '.video'
 ```
 
 ## Sessions
 
 Browser state persists within a session. Always:
+
 1. Start with `--session new` on first call
 2. Use returned `session_id` for subsequent calls
 3. Close session when done
-
-### Navigating to Different URLs
-
-You can navigate to any URL within the same session using the `goto` action:
-
-```bash
-# Start on one site
-SESSION=$(infsh app run agentic-browser --function open --session new --input '{
-  "url": "https://site1.com"
-}' | jq -r '.session_id')
-
-# Navigate to a different site (same session, preserves cookies/state)
-infsh app run agentic-browser --function interact --session $SESSION --input '{
-  "action": "goto", "url": "https://site2.com"
-}'
-
-# Or click a link to navigate
-infsh app run agentic-browser --function interact --session $SESSION --input '{
-  "action": "click", "ref": "@e5"
-}'
-```
 
 ## Related Skills
 
